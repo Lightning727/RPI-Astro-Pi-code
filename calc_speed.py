@@ -1,11 +1,14 @@
-from exif import Image
 from datetime import datetime
 import cv2
 import math
 import time
 from picamera import PiCamera
-GSD = 12648
+from exif import Image
 
+GSD = 12648
+FEATURE_NUMBER = 750
+IMAGE_PREFIX = 'photo'
+NUM_IMAGES = 100
 
 def get_time(image):
     with open(image, 'rb') as image_file:
@@ -14,38 +17,20 @@ def get_time(image):
         times = datetime.strptime(time_str, '%Y:%m:%d %H:%M:%S')
     return times
 
-
 def get_time_difference(image_1, image_2):
-    time_1 = get_time(image_1)
-    time_2 = get_time(image_2)
-    time_difference = time_2 - time_1
-    return time_difference.seconds
+    return (get_time(image_2) - get_time(image_1)).seconds
 
+def convert_to_cv(image):
+    return cv2.imread(image, cv2.IMREAD_GRAYSCALE)
 
-def convert_to_cv(image_1, image_2):
-    image_1_cv = cv2.imread(image_1, cv2.IMREAD_GRAYSCALE)
-    image_2_cv = cv2.imread(image_2, cv2.IMREAD_GRAYSCALE)
-    return image_1_cv, image_2_cv
-
-
-def calculate_features_parallel(image_cv, feature_number):
-    orb = cv2.ORB_create(nfeatures=feature_number)
-    keypoints, descriptors = orb.detectAndCompute(image_cv, None)
-    return keypoints, descriptors
-
-
-def calculate_features(image_1_cv, image_2_cv, feature_number):
-    keypoints_1, descriptors_1 = calculate_features_parallel(image_1_cv, feature_number)
-    keypoints_2, descriptors_2 = calculate_features_parallel(image_2_cv, feature_number)
-    return keypoints_1, keypoints_2, descriptors_1, descriptors_2
-
+def calculate_features(image_cv):
+    orb = cv2.ORB_create(nfeatures=FEATURE_NUMBER)
+    return orb.detectAndCompute(image_cv, None)
 
 def calculate_matches(descriptors_1, descriptors_2):
     brute_force = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = brute_force.match(descriptors_1, descriptors_2)
-    matches = sorted(matches, key=lambda x: x.distance)
-    return matches
-
+    return sorted(matches, key=lambda x: x.distance)
 
 def find_matching_coordinates(keypoints_1, keypoints_2, matches):
     coordinates_1 = []
@@ -59,31 +44,21 @@ def find_matching_coordinates(keypoints_1, keypoints_2, matches):
         coordinates_2.append((x2, y2))
     return coordinates_1, coordinates_2
 
-
 def calculate_mean_distance(coordinates_1, coordinates_2):
-    all_distances = 0
-    for coord1, coord2 in zip(coordinates_1, coordinates_2):
-        x_difference = coord1[0] - coord2[0]
-        y_difference = coord1[1] - coord2[1]
-        distance = math.hypot(x_difference, y_difference)
-        all_distances += distance
-    return all_distances / len(coordinates_1)
-
+    distances = [math.hypot(coord1[0] - coord2[0], coord1[1] - coord2[1])
+                 for coord1, coord2 in zip(coordinates_1, coordinates_2)]
+    return sum(distances) / len(coordinates_1)
 
 def calculate_speed_in_kmps(image_1, image_2):
     time_difference = get_time_difference(image_1, image_2)
-    image_1_cv, image_2_cv = convert_to_cv(image_1, image_2)
-    keypoints_1, keypoints_2, descriptors_1, descriptors_2 = calculate_features(image_1_cv, image_2_cv, 750)
+    image_1_cv, image_2_cv = convert_to_cv(image_1), convert_to_cv(image_2)
+    keypoints_1, descriptors_1 = calculate_features(image_1_cv)
+    keypoints_2, descriptors_2 = calculate_features(image_2_cv)
     matches = calculate_matches(descriptors_1, descriptors_2)
     coordinates_1, coordinates_2 = find_matching_coordinates(keypoints_1, keypoints_2, matches)
-    distances = [math.hypot(coord1[0] - coord2[0], coord1[1] - coord2[1])
-                 for coord1, coord2 in zip(coordinates_1, coordinates_2)]
-    total_distance = sum(distances)
-    average_distance = total_distance / len(distances)
+    average_distance = calculate_mean_distance(coordinates_1, coordinates_2)
     distance = average_distance * GSD / 100000
-    speed = distance / time_difference
-    return speed
-
+    return distance / time_difference
 
 def capture_image(file_path):
     with PiCamera() as camera:
@@ -91,44 +66,31 @@ def capture_image(file_path):
         camera.capture(file_path)
         time.sleep(1)
 
-
-def calculate_and_average_speed(image_prefix, num_images):
+def calculate_and_average_speed():
     speeds = []
-
-    for i in range(1, num_images):
-        image_1 = f"{image_prefix}{i}.jpg"
-        image_2 = f"{image_prefix}{i + 1}.jpg"
-
+    for i in range(1, NUM_IMAGES):
+        image_1 = f"{IMAGE_PREFIX}{i}.jpg"
+        image_2 = f"{IMAGE_PREFIX}{i + 1}.jpg"
         speed = calculate_speed_in_kmps(image_1, image_2)
         speeds.append(speed)
-
-    average_speed = sum(speeds) / len(speeds)
-    print(f"Average speed between consecutive images: {average_speed} km/s")
-    return average_speed
-
+    return sum(speeds) / len(speeds)
 
 def main():
-    num_images = 100
-    image_prefix = 'photo'
-
     start_time = time.time()
     end_time = start_time + 29 * 60  # Run for 29 minutes
-
     test_results = []
 
     while time.time() < end_time:
-        for i in range(1, num_images + 1):
-            image_path = f"{image_prefix}{i}.jpg"
+        for i in range(1, NUM_IMAGES + 1):
+            image_path = f"{IMAGE_PREFIX}{i}.jpg"
             capture_image(image_path)
-
-        average_speed = calculate_and_average_speed(image_prefix, num_images)
+        average_speed = calculate_and_average_speed()
         test_results.append(average_speed)
 
     overall_average_speed = sum(test_results) / len(test_results)
 
     with open("result.txt", "w") as result_file:
         result_file.write(f"{overall_average_speed:.5f}")
-
 
 if __name__ == "__main__":
     main()
