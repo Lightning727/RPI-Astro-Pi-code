@@ -8,7 +8,7 @@ from exif import Image
 GSD = 12648
 FEATURE_NUMBER = 750
 IMAGE_PREFIX = 'photo'
-NUM_IMAGES = 100
+NUM_IMAGES = 25
 
 def get_time(image):
     with open(image, 'rb') as image_file:
@@ -62,7 +62,7 @@ def calculate_speed_in_kmps(image_1, image_2):
 
 def capture_image(file_path):
     with PiCamera() as camera:
-        camera.resolution = (1920, 1080)
+        camera.resolution = (1280,720)
         camera.capture(file_path)
         time.sleep(1)
 
