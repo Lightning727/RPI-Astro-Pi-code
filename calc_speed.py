@@ -4,6 +4,7 @@ import math
 import time
 from picamera import PiCamera
 from exif import Image
+import statistics as s
 
 GSD = 12648
 FEATURE_NUMBER = 750
@@ -47,7 +48,7 @@ def find_matching_coordinates(keypoints_1, keypoints_2, matches):
 def calculate_mean_distance(coordinates_1, coordinates_2):
     distances = [math.hypot(coord1[0] - coord2[0], coord1[1] - coord2[1])
                  for coord1, coord2 in zip(coordinates_1, coordinates_2)]
-    return sum(distances) / len(coordinates_1)
+    return s.mean(distances)
 
 def calculate_speed_in_kmps(image_1, image_2):
     time_difference = get_time_difference(image_1, image_2)
@@ -73,7 +74,7 @@ def calculate_and_average_speed():
         image_2 = f"{IMAGE_PREFIX}{i + 1}.jpg"
         speed = calculate_speed_in_kmps(image_1, image_2)
         speeds.append(speed)
-    return sum(speeds) / len(speeds)
+    return s.mean(speeds)
 
 def main():
     start_time = time.time()
